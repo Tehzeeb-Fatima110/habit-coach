@@ -172,4 +172,36 @@ describe('createLocalRepo', () => {
 
     await expect(repo.addGoal(createGoal('Unsaved goal'))).rejects.toThrow(Error)
   })
+
+  it('filters malformed elements from a valid logs array', async () => {
+    const storage = createStorage()
+    const validLog = {
+      ...createLog('goal-1', '2026-10-11'),
+      id: 'log-1',
+    }
+    storage.setItem(
+      'habit-coach:logs',
+      JSON.stringify([validLog, 1, null]),
+    )
+    const repo = createLocalRepo(storage)
+    const logs = await repo.getLogs()
+
+    expect(logs).toHaveLength(1)
+    expect(logs[0]).toEqual(validLog)
+  })
+
+  it('returns valid goals mixed with malformed elements', async () => {
+    const storage = createStorage()
+    const validGoal = {
+      ...createGoal('Valid goal'),
+      id: 'goal-1',
+    }
+    storage.setItem(
+      'habit-coach:goals',
+      JSON.stringify([validGoal, 1, 'x', null, { title: 5 }]),
+    )
+    const repo = createLocalRepo(storage)
+
+    await expect(repo.getGoals()).resolves.toEqual([validGoal])
+  })
 })
