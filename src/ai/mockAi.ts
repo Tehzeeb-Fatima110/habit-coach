@@ -14,32 +14,67 @@ function daysBetween(start: string, end: string): number {
   return Math.round((dateAsUtcTime(end) - dateAsUtcTime(start)) / 86_400_000)
 }
 
-function sortNewestFirst(logs: Log[]): Log[] {
+function sortNewestFirst(logs: readonly Log[]): Log[] {
   return [...logs].sort((first, second) => second.date.localeCompare(first.date))
 }
 
-function getPatternFlag(logs: Log[], today: string): string | null {
-  const firstDate = addDays(today, -27)
-  const skippedLogs = logs.filter(
-    (log) =>
-      log.status === 'skipped' &&
-      log.date >= firstDate &&
-      log.date <= today,
-  )
-  const counts = new Map<number, number>()
+function getSkippedDays(logs: readonly Log[]): Set<string> {
+  const logsByDate = new Map<string, Log[]>()
 
-  for (const log of skippedLogs) {
-    const weekday = weekdayOf(log.date)
-    counts.set(weekday, (counts.get(weekday) ?? 0) + 1)
+  for (const log of logs) {
+    const logsForDate = logsByDate.get(log.date) ?? []
+    logsForDate.push(log)
+    logsByDate.set(log.date, logsForDate)
   }
 
-  for (const [weekday, count] of counts) {
-    if (count >= 3) {
-      return `You often skip on ${WEEKDAYS[weekday]}s`
+  const skippedDays = new Set<string>()
+  for (const [date, logsForDate] of logsByDate) {
+    if (logsForDate.every((log) => log.status === 'skipped')) {
+      skippedDays.add(date)
     }
   }
 
-  return null
+  return skippedDays
+}
+
+function getPatternFlag(logs: readonly Log[], today: string): string | null {
+  const firstDate = addDays(today, -27)
+  const skippedDays = getSkippedDays(logs)
+  const counts = new Map<number, { count: number; latestDate: string }>()
+
+  for (const date of skippedDays) {
+    if (date < firstDate || date > today) {
+      continue
+    }
+
+    const weekday = weekdayOf(date)
+    const current = counts.get(weekday)
+    counts.set(weekday, {
+      count: (current?.count ?? 0) + 1,
+      latestDate: current === undefined || date > current.latestDate
+        ? date
+        : current.latestDate,
+    })
+  }
+
+  let selectedWeekday: number | undefined
+  let selectedCount = 0
+  let selectedLatestDate = ''
+  for (const [weekday, details] of counts) {
+    if (
+      details.count >= 3 &&
+      (details.count > selectedCount ||
+        (details.count === selectedCount && details.latestDate > selectedLatestDate))
+    ) {
+      selectedWeekday = weekday
+      selectedCount = details.count
+      selectedLatestDate = details.latestDate
+    }
+  }
+
+  return selectedWeekday === undefined
+    ? null
+    : `You often skip on ${WEEKDAYS[selectedWeekday]}s`
 }
 
 function buildMessage(
@@ -59,17 +94,21 @@ function buildMessage(
     blunt: `${title} needs attention: your current streak is ${streak} days. Make the next session count.`,
     neutral: `Keep moving with ${title}: your current streak is ${streak} days. A small step today is enough.`,
   }
+  const trimmedMinimumVersion = minimumVersion?.trim()
   const minimumVersionMessage =
-    riskLevel !== 'low' && minimumVersion !== undefined
-      ? ` On difficult days, aim for your minimum version: ${minimumVersion}.`
+    riskLevel !== 'low' && trimmedMinimumVersion !== undefined && trimmedMinimumVersion !== ''
+      ? ` On difficult days, aim for your minimum version: ${trimmedMinimumVersion}.`
       : ''
 
   return messages[tone] + minimumVersionMessage
 }
 
 export function buildInsight(input: CoachInput): Insight {
-  const goalLogs = input.logs.filter((log) => log.goalId === input.goal.id)
+  const goalLogs = input.logs.filter(
+    (log) => log.goalId === input.goal.id && log.date <= input.today,
+  )
   const sortedLogs = sortNewestFirst(goalLogs)
+  const skippedDays = getSkippedDays(goalLogs)
   const streak = calculateStreak(goalLogs, input.today)
   const mostRecentDone = sortedLogs.find(
     (log) => log.status === 'done' && log.date <= input.today,
@@ -79,8 +118,9 @@ export function buildInsight(input: CoachInput): Insight {
       ? null
       : daysBetween(mostRecentDone.date, input.today)
   let consecutiveSkips = 0
-  for (const log of sortedLogs) {
-    if (log.status !== 'skipped') {
+  const distinctDates = [...new Set(sortedLogs.map((log) => log.date))]
+  for (const date of distinctDates) {
+    if (!skippedDays.has(date)) {
       break
     }
     consecutiveSkips += 1

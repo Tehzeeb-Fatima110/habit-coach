@@ -237,13 +237,13 @@ describe('buildInsight', () => {
 
   it('returns the first matching weekday when multiple patterns qualify', () => {
     expect(insight([
+      log('2026-03-09', 'skipped'),
+      log('2026-03-02', 'skipped'),
+      log('2026-02-23', 'skipped'),
       log('2026-03-13', 'skipped'),
       log('2026-03-06', 'skipped'),
       log('2026-02-27', 'skipped'),
       log('2026-02-20', 'skipped'),
-      log('2026-03-09', 'skipped'),
-      log('2026-03-02', 'skipped'),
-      log('2026-02-23', 'skipped'),
     ]).patternFlag).toBe('You often skip on Fridays')
   })
 

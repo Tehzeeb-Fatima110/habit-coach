@@ -3,7 +3,7 @@ import { createMockAi } from './mockAi.ts'
 
 export type CoachInput = {
   goal: Goal
-  logs: Log[]
+  logs: readonly Log[]
   today: string
 }
 
